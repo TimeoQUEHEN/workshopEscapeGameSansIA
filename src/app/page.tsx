@@ -1,103 +1,149 @@
-import Image from "next/image";
+'use client'
+
+import React, {useEffect, useState} from "react";
+import {useSocket} from "@/hooks/useSocketHooks";
+import PageDefaite from "@/app/components/pageDefaite";
+import {HAS_ACCESS, Rooms} from "@/game_rooms";
+import PageIntro from "@/app/components/pageIntro";
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+    /**
+     * Gestion des sockets pour (de)connexion et gestion multijoueurs
+     * @see useSocketHooks.tsx
+     */
+    const { socket, connected } = useSocket();
+    const [timeLeft, setTimeLeft] = useState<number>(60 * 60); // 60 minutes en secondes
+
+    /**
+     * Gestion de l'inventaire de l'équipe
+     * (composant)
+     * @see inventaire.tsx
+     */
+    const [inventory, setInventory] = useState<string[]>([]);
+
+    /**
+     * Gestion de la fin de partie (I.E timer = 0)
+     * (composant)
+     * @see pageDefaite.tsx
+     */
+    const [gameEnded, setGameEnded] = useState<boolean>(false);
+
+    /**
+     * S'active quand la souche du virus est obtenue (I.E Dernière énigme résolue)
+     * (composant)
+     * @see pageVictoire.tsx
+     */
+    const [gameWon, setGameWon] = useState<boolean>(false);
+
+    /**
+     * Gestion des joueurs connectés (+ présences dans pièces)
+     * (composants)
+     * @see playerList.tsx
+     */
+    const [players, setPlayers] = useState<any[]>([]);
+
+    /**
+     * Gestion des chats (joueurs + indices)
+     * (composants)
+     * @see chat.tsx
+     */
+    const [chatMessages, setChatMessages] = useState<any[]>([]);
+
+    /**
+     * Gestion de l'affichage de la salle correspondante
+     * le numéro correspond à un switch case qui appellera le composant correspondant
+     */
+    const [currentRoom, setCurrentRoom] = useState<Rooms>(Rooms.Intro);
+
+    const handleRoomChange = (room : number) => {
+        setCurrentRoom(room)
+    }
+
+    // Gestion des événements Socket.io
+    useEffect(() => {
+        if (!socket) return;
+
+        const socketInstance = socket as any;
+
+        socketInstance.on('gameState', (state: any) => {
+            setTimeLeft(state.timeLeft);
+            setInventory(state.inventory);
+            setGameEnded(state.gameEnded);
+        });
+
+        socketInstance.on('playersList', (playersList: any) => {
+            setPlayers(playersList);
+        });
+
+        socketInstance.on('chatMessage', (message: any) => {
+            setChatMessages(prev => [...prev, message]);
+        });
+
+        socketInstance.on('playerJoined', (player: any) => {
+            console.log('Nouveau joueur:', player.name);
+        });
+
+        socketInstance.on('playerLeft', (playerId: any) => {
+            console.log('Joueur parti:', playerId);
+        });
+
+        return () => {
+            socketInstance.off('gameState');
+            socketInstance.off('playersList');
+            socketInstance.off('chatMessage');
+            socketInstance.off('playerJoined');
+            socketInstance.off('playerLeft');
+        };
+    }, [socket]);
+
+
+    if (gameEnded) {
+        // Perdu
+        return (
+            <PageDefaite/>
+        )
+    }
+
+    if (!HAS_ACCESS) {
+        // code de démarrage
+        return (
+            <PageIntro/>
+        )
+    }
+
+    if (gameWon) {
+        return (
+            <PageVictoire/>
+        )
+    }
+
+    switch (currentRoom) {
+        // Hall
+        case Rooms.Hall :
+            return ( <HallRoom/> )
+
+        // Server
+        case Rooms.Server :
+            return ( <ServerRoom/> )
+
+        // Labo
+        case Rooms.Lab :
+            return ( <LabRoom/> )
+
+        // Archives
+        case Rooms.Archive :
+            return ( <ArchiveRoom/> )
+
+        // Vestiaire
+        case Rooms.Vestiaire :
+            return ( <ChangingRoom/> )
+
+        case Rooms.Finale :
+            return ( <FinalRoom/> )
+
+        // Defaut : Page Entrée
+        default :
+            return ( <PageIntro/> )
+    }
 }
